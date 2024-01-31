@@ -73,6 +73,29 @@
 (defvar acm-terminal-doc-max-width 80
   "The maximum width of the candidate doc in characters.")
 
+(defvar acm-terminal-annotation-icons
+  '(("Function" . " 󰡱 ")
+    ("Keyword" . "  ")
+    ("Module" . "  ")
+    ("Method" . "  ")
+    ("Struct" . "  ")
+    ("Snippet" . "  ")
+    ("Text" . "  ")
+    ("Variable" . " 󰫧 ")
+    ("Class" . "  ")
+    ("Custom" . "  ")
+    ("Feature" . " 󰯺 ")
+    ("Macro" . " 󰰏 ")
+    ("Interface" . "  ")
+    ("Constant" . "  ")
+    ("Field" . "  "))
+  "Annotation icons.")
+
+(defcustom acm-terminal-enable-annotation-icon nil
+  "Enable annotation icon display instead of text, default false."
+  :type 'boolean
+  :group 'acm-terminal)
+
 (defvar-local acm-terminal-candidate-doc nil
   "Latest docstring.")
 
@@ -193,6 +216,10 @@ See `popon-create' for more information."
           (+ (- (car (window-inside-edges)) (window-left-column))
              (acm-terminal-line-number-display-width)))))
 
+(defun acm-terminal-menu-item-icon-text (annotation)
+  "Returns icon text for given annotation."
+  (cdr (assoc annotation acm-terminal-annotation-icons)))
+
 (defun acm-terminal-menu-render-items (items menu-index)
   (let* ((item-index 0)
          ;; The max length is calcuated base on the format
@@ -207,18 +234,15 @@ See `popon-create' for more information."
          ;;
          ;; without changing the format, then we should add 1 when using
          ;; `acm-menu-max-length-cache'.
-         (max-length (1- acm-menu-max-length-cache))
-         (annotation-not-exits (cl-every (lambda (item) (string-empty-p (plist-get item :annotation))) items)))
+         (max-length (1- acm-menu-max-length-cache)))
     (dolist (v items)
-      (let* ((icon (cdr (assoc (downcase (plist-get v :icon)) acm-icon-alist)))
-             (candidate (plist-get v :displayLabel))
+      (let* ((candidate (plist-get v :displayLabel))
              (candidate-length (funcall acm-string-width-function candidate))
              (annotation (plist-get v :annotation))
              (annotation-text (if annotation annotation ""))
-             (annotation-length (funcall acm-string-width-function annotation-text))
+             (annotation-length (if acm-terminal-enable-annotation-icon 0 (funcall acm-string-width-function annotation-text)))
              (candidate-max-length (- max-length annotation-length 2))
-             (padding-length (- max-length (+ candidate-length annotation-length) 2))
-             (icon-text (if icon (acm-icon-build (nth 0 icon) (nth 1 icon) (nth 2 icon)) ""))
+             (padding-length (if acm-terminal-enable-annotation-icon (- max-length candidate-length 8) (- max-length (+ candidate-length annotation-length) 2)))
              (quick-access-key (nth item-index acm-quick-access-keys))
              candidate-line)
 
@@ -229,7 +253,10 @@ See `popon-create' for more information."
         ;; Build candidate line.
         (setq candidate-line
               (concat
-               ;; icon-text
+               (when acm-terminal-enable-annotation-icon
+                 (propertize (format "%s" (acm-terminal-menu-item-icon-text annotation))
+                             'face
+                             (if (equal item-index menu-index) 'acm-terminal-select-face 'font-lock-doc-face)))
                (when acm-enable-quick-access
                  (if quick-access-key (concat quick-access-key ". ") "   "))
                (if (zerop padding-length)
@@ -238,10 +265,14 @@ See `popon-create' for more information."
                      (concat candidate (make-string padding-length ?\s))
                    (truncate-string-to-width candidate candidate-max-length
                                              0 ?\s)))
-               " "
-               (propertize (format "%s \n" (capitalize annotation-text))
-                           'face
-                           (if (equal item-index menu-index) 'acm-terminal-select-face 'font-lock-doc-face))))
+              (if acm-terminal-enable-annotation-icon
+                  "\n"
+                " ")
+
+              (unless acm-terminal-enable-annotation-icon
+                (propertize (format "%s \n" (capitalize annotation-text))
+                            'face
+                            (if (equal item-index menu-index) 'acm-terminal-select-face 'font-lock-doc-face)))))
 
         ;; Render current candidate.
         (if (equal item-index menu-index)
