@@ -80,6 +80,7 @@
     ("Method" . "  ")
     ("Struct" . "  ")
     ("Snippet" . "  ")
+    ("Yas-Snippet" . "  ")
     ("Text" . "  ")
     ("Variable" . " 󰫧 ")
     ("Class" . "  ")
@@ -88,7 +89,8 @@
     ("Macro" . " 󰰏 ")
     ("Interface" . "  ")
     ("Constant" . "  ")
-    ("Field" . "  "))
+    ("Field" . "  ")
+    (nil . " T "))
   "Annotation icons.")
 
 (defcustom acm-terminal-enable-annotation-icon nil
@@ -173,14 +175,14 @@ substring lenght, e.g.:
     (when (or force (equal (face-attribute 'acm-terminal-select-face :foreground) 'unspecified))
       (set-face-foreground 'acm-terminal-select-face (face-attribute 'font-lock-function-name-face :foreground)))))
 
-(defun acm-terminal-get-popup-position ()
+(defun acm-terminal-get-popup-position (frame)
   "Return postion of menu."
-  (if (and acm-menu-frame (eobp))
+  (if (and frame (eobp))
       ;; The existing overlay will cause `popon-x-y-at-pos' and `posn-x-y' to
       ;; get the wrong position when point at the and of buffer.
-      (let ((pos (popon-position acm-menu-frame))
-            (direction (plist-get (cdr acm-menu-frame) :direction))
-            (size (popon-size acm-menu-frame)))
+      (let ((pos (popon-position frame))
+            (direction (plist-get (cdr frame) :direction))
+            (size (popon-size frame)))
         (cons (car pos)
               (if (eq 'top direction)
                   (+ (cdr pos) (cdr size))
@@ -202,7 +204,7 @@ See `popon-create' for more information."
 
 (defun acm-terminal-make-frame (_)
   "Advice override `acm-make-frame' to make an invisible popon."
-  (let ((pos (acm-terminal-get-popup-position)))
+  (let ((pos (acm-terminal-get-popup-position nil)))
     (acm-terminal-make-popon (cons "" 0) pos)))
 
 (cl-defmacro acm-terminal-create-frame-if-not-exist (frame _frame-buffer _frame-name &optional _internal-border)
@@ -332,29 +334,29 @@ See `popon-create' for more information."
     (when acm-menu-frame
       (let ((lines (split-string
                     (with-temp-buffer
-                      (acm-menu-render-items items menu-index)
+                      (acm-terminal-menu-render-items items menu-index)
                       (buffer-string))
                     "\n")))
         ;; Adjust menu frame position.
-        (acm-terminal-menu-adjust-pos lines))
+        (acm-terminal-menu-adjust-pos acm-menu-frame lines))
 
       (popon-redisplay)
       (plist-put (cdr acm-menu-frame) :visible t))
 
-    ;; Not adjust menu frame size if not necessary,
-    ;; such as select candidate just change index,
-    ;; or menu width not change when switch to next page.
-    (when (or (not (equal menu-old-max-length menu-new-max-length))
-              (not (equal menu-old-number menu-new-number)))
-      ;; Adjust doc frame with menu frame position.
-      (when (acm-terminal-popon-visible-p acm-doc-frame)
-        (acm-terminal-doc-adjust-pos acm-terminal-candidate-doc)))
+    ;; ;; Not adjust menu frame size if not necessary,
+    ;; ;; such as select candidate just change index,
+    ;; ;; or menu width not change when switch to next page.
+    ;; (when (or (not (equal menu-old-max-length menu-new-max-length))
+    ;;           (not (equal menu-old-number menu-new-number)))
+    ;;   ;; Adjust doc frame with menu frame position.
+    ;;   (when (acm-terminal-popon-visible-p acm-doc-frame)
+    ;;     (acm-terminal-doc-adjust-pos acm-terminal-candidate-doc)))
 
     ;; Fetch `documentation' and `additionalTextEdits' information.
     (cl-letf (((symbol-function 'acm-frame-visible-p) 'acm-terminal-popon-visible-p))
       (acm-terminal-doc-try-show))))
 
-(defun acm-terminal-menu-adjust-pos (&optional lines)
+(defun acm-terminal-menu-adjust-pos (frame &optional lines)
   "Adjust menu frame position."
   (pcase-let* ((`(,edge-left ,edge-top ,edge-right ,edge-bottom) (window-inside-edges))
                (textarea-width (- (window-width)
@@ -362,7 +364,7 @@ See `popon-create' for more information."
                                      (acm-terminal-line-number-display-width))))
                (textarea-height (- edge-bottom edge-top))
                (`(,cursor-x . ,cursor-y)
-                (prog1 (acm-terminal-get-popup-position)
+                (prog1 (acm-terminal-get-popup-position acm-menu-frame)
                   (when lines
                     (plist-put (cdr acm-menu-frame) :lines lines)
                     (plist-put (cdr acm-menu-frame) :width (length (car lines))))))
@@ -381,6 +383,59 @@ See `popon-create' for more information."
      (t
       (plist-put (cdr acm-menu-frame) :direction 'bottom)
       (plist-put (cdr acm-menu-frame) :y (+ cursor-y 1))))))
+
+(defun acm-terminal-code-action-render (menu-old-cache)
+  (let* ((items menu-old-cache);;acm-menu-candidates)
+         (menu-old-max-length (car menu-old-cache))
+         (menu-old-number (cdr menu-old-cache))
+         ;;(menu-new-max-length (acm-menu-max-length))
+         (menu-new-max-length 100)
+         (menu-new-number (length items))
+         (menu-index 0))
+    ;; Record newest cache.
+    (setq acm-menu-max-length-cache menu-new-max-length)
+    (setq acm-menu-number-cache menu-new-number)
+
+    ;; Insert menu candidates.
+    (when lsp-bridge-call-hierarchy--frame
+      (let ((lines (split-string
+                    (with-temp-buffer
+                      (acm-terminal-menu-render-items items menu-index)
+                      (buffer-string))
+                    "\n")))
+        ;; Adjust menu frame position.
+        (acm-terminal-code-action-adjust-pos lines))
+
+      (popon-redisplay)
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :visible t))))
+
+(defun acm-terminal-code-action-adjust-pos (&optional lines)
+  "Adjust menu frame position."
+  (pcase-let* ((`(,edge-left ,edge-top ,edge-right ,edge-bottom) (window-inside-edges))
+               (textarea-width (- (window-width)
+                                  (+ (- edge-left (window-left-column))
+                                     (acm-terminal-line-number-display-width))))
+               (textarea-height (- edge-bottom edge-top))
+               (`(,cursor-x . ,cursor-y)
+                (prog1 (acm-terminal-get-popup-position lsp-bridge-call-hierarchy--frame)
+                  (when lines
+                    (plist-put (cdr lsp-bridge-call-hierarchy--frame) :lines lines)
+                    (plist-put (cdr lsp-bridge-call-hierarchy--frame) :width (length (car lines))))))
+               (`(,menu-w . ,menu-h) (popon-size lsp-bridge-call-hierarchy--frame))
+               (bottom-free-h (- edge-bottom edge-top cursor-y)))
+    (let ((x (if (> textarea-width (+ cursor-x menu-w))
+                 cursor-x
+               (- cursor-x (- (+ cursor-x menu-w) textarea-width) 1))))
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :x x))
+    (cond
+     ;; top
+     ((<= bottom-free-h menu-h)
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :direction 'top)
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :y (- cursor-y menu-h)))
+     ;; bottom
+     (t
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :direction 'bottom)
+      (plist-put (cdr lsp-bridge-call-hierarchy--frame) :y (+ cursor-y 1))))))
 
 (defun acm-terminal-doc-get-page (lines start height)
   "Get doc page.
@@ -444,7 +499,7 @@ DOC-LINES       text lines of doc"
                                   (+ (- edge-left (window-left-column))
                                      (acm-terminal-line-number-display-width))))
                (textarea-height (- edge-bottom edge-top))
-               (`(,cursor-x . ,cursor-y) (acm-terminal-get-popup-position))
+               (`(,cursor-x . ,cursor-y) (acm-terminal-get-popup-position acm-doc-frame))
                (`(,menu-x . ,menu-y) (popon-position acm-menu-frame))
                (`(,menu-w . ,menu-h) (popon-size acm-menu-frame))
                (menu-right (+ menu-x menu-w))
@@ -726,13 +781,106 @@ DOC-LINES       text lines of doc"
           (plist-put (cdr acm-menu-frame) :direction direction)
 
           ;; Render menu.
-          (acm-menu-render menu-old-cache))
+          (acm-terminal-menu-render menu-old-cache))
         ))
      (t
       (acm-hide)))))
 
+(defun acm-terminal-code-action-popup-select ()
+  (interactive)
+  (lsp-bridge-code-action-popup-quit)
+  (lsp-bridge-code-action--fix-do
+   (cdr (nth lsp-bridge-call-hierarchy--index lsp-bridge-call-hierarchy--popup-response))))
+
+(defun acm-terminal-code-action-popup-quit ()
+  (interactive)
+  (acm-cancel-timer lsp-bridge-code-action-popup-maybe-preview-timer)
+
+  (acm-frame-delete-frame lsp-bridge-call-hierarchy--frame)
+  (kill-buffer "*lsp-bridge-code-action-menu*")
+
+  ;; (advice-remove 'lsp-bridge-call-hierarchy-select #'lsp-bridge-code-action-popup-select)
+  ;; (advice-remove 'lsp-bridge-call-hierarchy-quit #'lsp-bridge-code-action-popup-quit)
+  (when (get-buffer-window lsp-bridge-code-action--current-buffer)
+    (select-window (get-buffer-window lsp-bridge-code-action--current-buffer))))
+
+(defun acm-terminal-code-action-popup-menu (actions default-action)
+  (let ((recentf-keep '(".*" . nil)) ;; not push temp file in recentf-list
+        (recentf-exclude '(".*"))
+        (menu-length (length actions))
+        (menu-buffer (get-buffer-create "*lsp-bridge-code-action-menu*"))
+        (menu-width 0)
+        (menu-frame-exist (frame-live-p lsp-bridge-call-hierarchy--frame))
+        cursor
+        menu-items '())
+    ;; Calcuate cursor position when menu frame is not visible.
+    (unless menu-frame-exist
+      (setq cursor (acm-frame-get-popup-position (point))))
+
+    ;; Prepare for previewing.
+    (setq lsp-bridge-code-action--current-buffer (current-buffer))
+    (setq lsp-bridge-code-action--oldfile (make-temp-file
+                                           (buffer-name) nil nil (buffer-string)))
+    (setq lsp-bridge-code-action--preview-alist '())
+
+    ;; Reuse hierarchy popup keymap and mode here.
+    (setq lsp-bridge-call-hierarchy--popup-response actions)
+
+    (acm-terminal-create-frame-if-not-exist lsp-bridge-call-hierarchy--frame menu-buffer "code action")
+
+    (with-current-buffer menu-buffer
+      ;; Erase menu buffer for multiple code-action response from Python side.
+      (read-only-mode -1)
+      (erase-buffer)
+
+      ;; (cl-loop for i from 0 to (1- (length actions))
+      ;;          do (let* ((title (car (nth i actions)))
+      ;;                    (format-line (format "%d. %s\n" (1+ i) title))
+      ;;                    (line-width (length format-line)))
+      ;;               ;;(insert format-line)
+      ;;               ;;(setq menu-width (max line-width menu-width))))
+      (dolist (action actions)
+        (let* ((action-text (car action))
+               (title (plist-get action :title))
+               (menu-item (list :key title :displayLabel action-text)))
+          (insert action-text)
+          ;;(plist-put (car menu-item) :displayLabel "abc")
+          (if menu-items
+              (setq menu-items (append menu-items (list menu-item)))
+            (setq menu-items (list menu-item)))))
+                    
+      ;;(lsp-bridge-call-hierarchy-mode)
+      (acm-mode 1)
+      (goto-char (point-min))
+      (setq-local cursor-type nil)
+      (setq-local truncate-lines t)
+      (setq-local mode-line-format nil)
+
+      ;; Don't adjust frame position if code action menu current is visible.
+      (unless menu-frame-exist
+        ;;(acm-frame-set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (+ (cdr cursor) (line-pixel-height)))
+        ;;(set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (cdr cursor))
+        (popon-put lsp-bridge-call-hierarchy--frame :x 0)
+        (popon-put lsp-bridge-call-hierarchy--frame :y 10)
+        ;; (acm-frame-set-frame-size lsp-bridge-call-hierarchy--frame omenu-width
+        ;;                           (min menu-length (/ (frame-height acm-frame--emacs-frame) 4)))
+        (popon-put lsp-bridge-call-hierarchy--frame :widht menu-width)
+        (popon-put lsp-bridge-call-hierarchy--frame :height menu-length)
+        (acm-terminal-code-action-render menu-items)))
+    ;;(popon-redisplay)))
+    ;;(t popon-kill lsp-bridge-call-hierarchy--frame)
+    ))
+
+(defun acm-terminal-can-display-p ()
+  (not (or noninteractive
+           emacs-basic-display)))
+
+(defun acm-terminal-doc-preview ()
+  "Stub function to supress doc preview.")
+
 (defvar acm-terminal-advices
   '((acm-frame-init-colors :override acm-terminal-init-colors)
+    (acm-frame-can-display-p :override acm-terminal-can-display-p)
     (acm-hide :override acm-terminal-hide)
     (acm-update :override acm-terminal-update)
     (acm-doc-try-show :override acm-terminal-doc-try-show)
@@ -742,7 +890,10 @@ DOC-LINES       text lines of doc"
     (acm-menu-max-length :filter-return acm-terminal-max-length)
     (acm-menu-render :override acm-terminal-menu-render)
     (acm-menu-render-items :override acm-terminal-menu-render-items)
-    (acm-markdown-render-content :around acm-terminal-markdown-render-content))
+    (acm-markdown-render-content :around acm-terminal-markdown-render-content)
+    (lsp-bridge-code-action-popup-select :override acm-terminal-code-action-popup-select)
+    (lsp-bridge-code-action-popup-quit :override acm-terminal-code-action-popup-quit)
+    (lsp-bridge-code-action-popup-menu :override acm-terminal-code-action-popup-menu))
   "A list of (ORIG-FN HOW ADVICE-FN).")
 
 (defun acm-terminal-active ()
