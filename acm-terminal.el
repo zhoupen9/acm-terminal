@@ -404,7 +404,8 @@ See `popon-create' for more information."
                       (buffer-string))
                     "\n")))
         ;; Adjust menu frame position.
-        (acm-terminal-code-action-adjust-pos lines))
+        ;;(acm-terminal-code-action-adjust-pos lines))
+        (acm-terminal-menu-adjust-pos lsp-bridge-call-hierarchy--frame lines))
 
       (popon-redisplay)
       (plist-put (cdr lsp-bridge-call-hierarchy--frame) :visible t))))
@@ -797,21 +798,29 @@ DOC-LINES       text lines of doc"
 
 (defun acm-terminal-code-action-popup-quit ()
   (interactive)
-  (acm-cancel-timer lsp-bridge-code-action-popup-maybe-preview-timer)
-
-  (acm-frame-delete-frame lsp-bridge-call-hierarchy--frame)
+  (when lsp-bridge-call-hierarchy--frame
+    (popon-kill lsp-bridge-call-hierarchy--frame))
   (kill-buffer "*lsp-bridge-code-action-menu*")
 
+  (advice-remove 'acm-select-next #'acm-terminal-code-action-select-next)
+  (advice-remove 'acm-complete #'acm-terminal-code-action-popup-select)
   ;; (advice-remove 'lsp-bridge-call-hierarchy-select #'lsp-bridge-code-action-popup-select)
   ;; (advice-remove 'lsp-bridge-call-hierarchy-quit #'lsp-bridge-code-action-popup-quit)
   (when (get-buffer-window lsp-bridge-code-action--current-buffer)
     (select-window (get-buffer-window lsp-bridge-code-action--current-buffer))))
 
+(defun acm-terminal-code-action-select-next (orig &rest args)
+  (interactive)
+  (let ((menu-buffer (get-buffer-create acm-buffer)))
+    (with-current-buffer menu-buffer
+      (apply orig args))))
+  
 (defun acm-terminal-code-action-popup-menu (actions default-action)
   (let ((recentf-keep '(".*" . nil)) ;; not push temp file in recentf-list
         (recentf-exclude '(".*"))
         (menu-length (length actions))
-        (menu-buffer (get-buffer-create "*lsp-bridge-code-action-menu*"))
+        ;;(menu-buffer (get-buffer-create "*lsp-bridge-code-action-menu*"))
+        (menu-buffer (get-buffer-create acm-buffer))
         (menu-width 0)
         (menu-frame-exist (frame-live-p lsp-bridge-call-hierarchy--frame))
         (bounds (acm-get-input-prefix-bound))
@@ -843,34 +852,47 @@ DOC-LINES       text lines of doc"
       (dolist (action actions)
         (let* ((action-text (car action))
                (title (plist-get action :title))
-               (menu-item (list :key title :displayLabel action-text)))
+               (candicate (list :key title :label title :icon "function" :annotation "Function" :displayLabel action-text)))
           (insert action-text)
           (if menu-items
-              (setq menu-items (append menu-items (list menu-item)))
-            (setq menu-items (list menu-item)))))
+              (setq menu-items (append menu-items (list candicate)))
+            (setq menu-items (list candicate)))))
+
+      (when menu-items
+        (setq-local acm-menu-index 0)
+        (setq-local acm-menu-offset 0)
+        (setq-local acm-menu-candidates menu-items))
+
+      (advice-add 'acm-complete :override #'acm-terminal-code-action-popup-select)
+      (advice-add 'acm-select-next :around #'acm-terminal-code-action-select-next)
       (goto-char (point-min))
-      (acm-mode 1))
+      (acm-terminal-code-action-render menu-items)
+      (setq-local acm-menu-index 0)
+      (setq-local acm-menu-offset 0)
+      (setq-local acm-menu-candidates menu-items)
+      (acm-mode 1)
+      (popon-redisplay))
                     
     ;;(lsp-bridge-call-hierarchy-mode)
     (acm-mode 1)
-    ;;(goto-char (point-min))
-    (setq-local cursor-type nil)
-    (setq-local truncate-lines t)
-    (setq-local mode-line-format nil)
 
-    (with-current-buffer menu-buffer
-      ;; Don't adjust frame position if code action menu current is visible.
-      (unless menu-frame-exist
-        ;;(acm-frame-set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (+ (cdr cursor) (line-pixel-height)))
-        ;;(set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (cdr cursor))
-        ;;(goto-char (point-min))
-        ;; (popon-put lsp-bridge-call-hierarchy--frame :x 0)
-        ;; (popon-put lsp-bridge-call-hierarchy--frame :y 10)
-        ;; (acm-frame-set-frame-size lsp-bridge-call-hierarchy--frame omenu-width
-        ;;                           (min menu-length (/ (frame-height acm-frame--emacs-frame) 4)))
-        ;; (popon-put lsp-bridge-call-hierarchy--frame :widht menu-width)
-        ;; (popon-put lsp-bridge-call-hierarchy--frame :height menu-length)
-        (acm-terminal-code-action-render menu-items)))
+    ;; (setq-local cursor-type nil)
+    ;; (setq-local truncate-lines t)
+    ;;(setq-local mode-line-format nil)
+
+    ;; (with-current-buffer menu-buffer
+    ;;   ;; Don't adjust frame position if code action menu current is visible.
+    ;;   (unless menu-frame-exist
+    ;;     ;;(acm-frame-set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (+ (cdr cursor) (line-pixel-height)))
+    ;;     ;;(set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (cdr cursor))
+    ;;     ;;(goto-char (point-min))
+    ;;     ;; (popon-put lsp-bridge-call-hierarchy--frame :x 0)
+    ;;     ;; (popon-put lsp-bridge-call-hierarchy--frame :y 10)
+    ;;     ;; (acm-frame-set-frame-size lsp-bridge-call-hierarchy--frame omenu-width
+    ;;     ;;                           (min menu-length (/ (frame-height acm-frame--emacs-frame) 4)))
+    ;;     ;; (popon-put lsp-bridge-call-hierarchy--frame :widht menu-width)
+    ;;     ;; (popon-put lsp-bridge-call-hierarchy--frame :height menu-length)
+    ;;     (acm-terminal-code-action-render menu-items)))
     ;;(popon-redisplay)))
     ;;(t popon-kill lsp-bridge-call-hierarchy--frame)
     ))
