@@ -364,25 +364,25 @@ See `popon-create' for more information."
                                      (acm-terminal-line-number-display-width))))
                (textarea-height (- edge-bottom edge-top))
                (`(,cursor-x . ,cursor-y)
-                (prog1 (acm-terminal-get-popup-position acm-menu-frame)
+                (prog1 (acm-terminal-get-popup-position frame)
                   (when lines
-                    (plist-put (cdr acm-menu-frame) :lines lines)
-                    (plist-put (cdr acm-menu-frame) :width (length (car lines))))))
-               (`(,menu-w . ,menu-h) (popon-size acm-menu-frame))
+                    (plist-put (cdr frame) :lines lines)
+                    (plist-put (cdr frame) :width (length (car lines))))))
+               (`(,menu-w . ,menu-h) (popon-size frame))
                (bottom-free-h (- edge-bottom edge-top cursor-y)))
     (let ((x (if (> textarea-width (+ cursor-x menu-w))
                  cursor-x
                (- cursor-x (- (+ cursor-x menu-w) textarea-width) 1))))
-      (plist-put (cdr acm-menu-frame) :x x))
+      (plist-put (cdr frame) :x x))
     (cond
      ;; top
      ((<= bottom-free-h menu-h)
-      (plist-put (cdr acm-menu-frame) :direction 'top)
-      (plist-put (cdr acm-menu-frame) :y (- cursor-y menu-h)))
+      (plist-put (cdr frame) :direction 'top)
+      (plist-put (cdr frame) :y (- cursor-y menu-h)))
      ;; bottom
      (t
-      (plist-put (cdr acm-menu-frame) :direction 'bottom)
-      (plist-put (cdr acm-menu-frame) :y (+ cursor-y 1))))))
+      (plist-put (cdr frame) :direction 'bottom)
+      (plist-put (cdr frame) :y (+ cursor-y 1))))))
 
 (defun acm-terminal-code-action-render (menu-old-cache)
   (let* ((items menu-old-cache);;acm-menu-candidates)
@@ -692,6 +692,9 @@ DOC-LINES       text lines of doc"
     (when acm-menu-frame
       (setq acm-menu-frame (popon-kill acm-menu-frame)))
 
+    (when lsp-bridge-call-hierarchy--frame
+      (setq lsp-bridge-call-hierarchy--frame (popon-kill lsp-bridge-call-hierarchy--frame)))
+
     ;; Hide doc frame.
     (acm-doc-hide)
 
@@ -833,39 +836,34 @@ DOC-LINES       text lines of doc"
       (read-only-mode -1)
       (erase-buffer)
 
-      ;; (cl-loop for i from 0 to (1- (length actions))
-      ;;          do (let* ((title (car (nth i actions)))
-      ;;                    (format-line (format "%d. %s\n" (1+ i) title))
-      ;;                    (line-width (length format-line)))
-      ;;               ;;(insert format-line)
-      ;;               ;;(setq menu-width (max line-width menu-width))))
       (dolist (action actions)
         (let* ((action-text (car action))
                (title (plist-get action :title))
                (menu-item (list :key title :displayLabel action-text)))
           (insert action-text)
-          ;;(plist-put (car menu-item) :displayLabel "abc")
           (if menu-items
               (setq menu-items (append menu-items (list menu-item)))
-            (setq menu-items (list menu-item)))))
+            (setq menu-items (list menu-item))))))
                     
-      ;;(lsp-bridge-call-hierarchy-mode)
-      (acm-mode 1)
-      (goto-char (point-min))
-      (setq-local cursor-type nil)
-      (setq-local truncate-lines t)
-      (setq-local mode-line-format nil)
+    ;;(lsp-bridge-call-hierarchy-mode)
+    (acm-mode 1)
+    ;;(goto-char (point-min))
+    (setq-local cursor-type nil)
+    (setq-local truncate-lines t)
+    (setq-local mode-line-format nil)
 
+    (with-current-buffer menu-buffer
       ;; Don't adjust frame position if code action menu current is visible.
       (unless menu-frame-exist
         ;;(acm-frame-set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (+ (cdr cursor) (line-pixel-height)))
         ;;(set-frame-position lsp-bridge-call-hierarchy--frame (car cursor) (cdr cursor))
-        (popon-put lsp-bridge-call-hierarchy--frame :x 0)
-        (popon-put lsp-bridge-call-hierarchy--frame :y 10)
+        ;;(goto-char (point-min))
+        ;; (popon-put lsp-bridge-call-hierarchy--frame :x 0)
+        ;; (popon-put lsp-bridge-call-hierarchy--frame :y 10)
         ;; (acm-frame-set-frame-size lsp-bridge-call-hierarchy--frame omenu-width
         ;;                           (min menu-length (/ (frame-height acm-frame--emacs-frame) 4)))
-        (popon-put lsp-bridge-call-hierarchy--frame :widht menu-width)
-        (popon-put lsp-bridge-call-hierarchy--frame :height menu-length)
+        ;; (popon-put lsp-bridge-call-hierarchy--frame :widht menu-width)
+        ;; (popon-put lsp-bridge-call-hierarchy--frame :height menu-length)
         (acm-terminal-code-action-render menu-items)))
     ;;(popon-redisplay)))
     ;;(t popon-kill lsp-bridge-call-hierarchy--frame)
