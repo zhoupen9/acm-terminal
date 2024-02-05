@@ -814,6 +814,7 @@ DOC-LINES       text lines of doc"
         (menu-buffer (get-buffer-create "*lsp-bridge-code-action-menu*"))
         (menu-width 0)
         (menu-frame-exist (frame-live-p lsp-bridge-call-hierarchy--frame))
+        (bounds (acm-get-input-prefix-bound))
         cursor
         menu-items '())
     ;; Calcuate cursor position when menu frame is not visible.
@@ -831,6 +832,9 @@ DOC-LINES       text lines of doc"
 
     (acm-terminal-create-frame-if-not-exist lsp-bridge-call-hierarchy--frame menu-buffer "code action")
 
+    ;; Record menu popup position and buffer.
+    (setq acm-menu-frame-popup-point (or (car bounds) (point)))
+
     (with-current-buffer menu-buffer
       ;; Erase menu buffer for multiple code-action response from Python side.
       (read-only-mode -1)
@@ -843,7 +847,9 @@ DOC-LINES       text lines of doc"
           (insert action-text)
           (if menu-items
               (setq menu-items (append menu-items (list menu-item)))
-            (setq menu-items (list menu-item))))))
+            (setq menu-items (list menu-item)))))
+      (goto-char (point-min))
+      (acm-mode 1))
                     
     ;;(lsp-bridge-call-hierarchy-mode)
     (acm-mode 1)
